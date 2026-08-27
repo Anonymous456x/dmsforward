@@ -10,7 +10,7 @@ pkgs.mkShell {
   ];
   
   shellHook = ''
-    echo "✅ Python environment ready!"
+    echo "✅ Python environment ready with all packages!"
     python --version
   '';
 }
