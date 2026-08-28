@@ -15,6 +15,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv('DM_BOT_TOKEN')
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
 CHANNEL_LINK = os.getenv('CHANNEL_LINK', 'https://t.me/+vKFF6nhXTzwxNDdl')
+CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', '@free_promote')
 PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 
 (ADD_ACCOUNT, PHONE_INPUT, OTP_VERIFY, SET_MESSAGE, SET_AUTO_REPLY, SET_ADS, DM_COUNT, REDEEM_CODE, DM_MESSAGE, DM_SEND, PAYMENT_UTR) = range(11)
@@ -22,12 +23,11 @@ PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========== START - NO CHANNEL CHECK ==========
+# ========== START ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    # Directly save user and show menu
     db_add_user(user_id, user.username or "Unknown", user.first_name or "User")
     await show_main_menu(update, context)
 
@@ -64,7 +64,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     accounts = db_get_accounts(user_id)
     
     welcome_text = (
-        f"✅ *Welcome, {first_name} 😊!*\n\n"
+        f"✅ *All channels joined! Welcome, {first_name} 😊!*\n\n"
         f"🆔 *Your ID:* `{user_id}`\n"
         f"👤 *Username:* @{username}\n\n"
         f"🔔 *Tap Add Account to get started!*\n"
@@ -554,7 +554,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(conv_handler)
-    print(f"✅ DM Increaser Bot Running: {os.getenv('DM_BOT_USERNAME')}")
+    print(f"✅ DM Bot Running: {os.getenv('DM_BOT_USERNAME')}")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
