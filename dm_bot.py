@@ -517,4 +517,51 @@ async def pay_qr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f
+            f"💳 *Scan QR Code to Pay ₹{PAYMENT_AMOUNT}*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"📱 *UPI ID:* `{upi_id}`\n"
+            f"💰 *Amount:* ₹{PAYMENT_AMOUNT}\n\n"
+            f"📌 *Steps:*\n"
+            f"1️⃣ Scan QR code with any UPI app\n"
+            f"2️⃣ Pay ₹{PAYMENT_AMOUNT}\n"
+            f"3️⃣ Click 'Submit UTR'\n"
+            f"4️⃣ Enter UTR code\n\n"
+            f"✅ *After payment, premium will be activated!*",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+        
+        await context.bot.send_photo(
+            chat_id=user_id,
+            photo=bio,
+            caption=f"💳 *Scan to Pay ₹{PAYMENT_AMOUNT}*",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await query.edit_message_text(
+            f"❌ *Error generating QR Code!*\n\n"
+            f"📌 Please use UPI ID directly:\n"
+            f"`{os.getenv('UPI_ID')}`\n\n"
+            f"💳 Pay ₹{PAYMENT_AMOUNT} and submit UTR",
+            parse_mode="Markdown"
+        )
+
+# ========== SUBMIT UTR ==========
+async def submit_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "📤 *Submit UTR Code*\n\n"
+        "🔢 Enter your UTR number:\n"
+        "📌 Found in your payment receipt\n\n"
+        "⬇️ Type your UTR:",
+        parse_mode="Markdown"
+    )
+    return PAYMENT_UTR
+
+async def utr_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    utr = update.message.text.strip()
+    
+    if le
