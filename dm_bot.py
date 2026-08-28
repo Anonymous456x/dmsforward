@@ -23,11 +23,11 @@ PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========== CHANNEL JOIN CHECK - FIXED ==========
+# ========== CHANNEL JOIN CHECK ==========
 async def check_channel_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     channel_username = os.getenv('CHANNEL_USERNAME', '@free_promote')
+    
     if channel_username.startswith('@'):
         channel_username = channel_username[1:]
     
@@ -38,20 +38,21 @@ async def check_channel_join(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             return False
     except Exception as e:
+        logger.error(f"Channel check error: {e}")
         return False
 
-# ========== START - WITH JOIN CHECK ==========
+# ========== START ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    # Check if user joined channel
     is_member = await check_channel_join(update, context)
     
     if not is_member:
         keyboard = [
             [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)],
-            [InlineKeyboardButton("✅ Check Again", callback_data="check_join")]
+            [InlineKeyboardButton("✅ Check Again", callback_data="check_join")],
+            [InlineKeyboardButton("🔄 Force Refresh", callback_data="force_refresh")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -63,13 +64,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"1️⃣ Click 'Join Channel'\n"
             f"2️⃣ Click 'Join' in Telegram\n"
             f"3️⃣ Click 'Check Again'\n\n"
-            f"✅ *Already joined?* Click 'Check Again'",
+            f"💡 *Already joined?* Click 'Force Refresh'",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
         return
     
-    # User joined, show main menu
     db_add_user(user_id, user.username or "Unknown", user.first_name or "User")
     await show_main_menu(update, context)
 
@@ -91,7 +91,43 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"📌 *After joining:*\n"
             f"1️⃣ Wait 5 seconds\n"
             f"2️⃣ Click 'Check Again'\n\n"
-            f"💡 *Already joined?* Try /start again",
+            f"💡 *Already joined?* Click 'Force Refresh'",
+            parse_mode="Markdown"
+        )
+
+# ========== FORCE REFRESH ==========
+async def force_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    try:
+        channel_username = os.getenv('CHANNEL_USERNAME', '@free_promote')
+        if channel_username.startswith('@'):
+            channel_username = channel_username[1:]
+        
+        member = await context.bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
+        
+        if member.status in ['member', 'administrator', 'creator']:
+            db_add_user(user_id, query.from_user.username or "Unknown", query.from_user.first_name or "User")
+            await show_main_menu(update, context)
+            return
+        else:
+            await query.edit_message_text(
+                f"❌ *Not a member yet!*\n\n"
+                f"📌 Please join first:\n{CHANNEL_LINK}\n\n"
+                f"Then click 'Check Again'",
+                parse_mode="Markdown"
+            )
+            return
+    except Exception as e:
+        await query.edit_message_text(
+            f"❌ *Error checking membership!*\n\n"
+            f"📌 Please try:\n"
+            f"1️⃣ Join: {CHANNEL_LINK}\n"
+            f"2️⃣ Wait 10 seconds\n"
+            f"3️⃣ Click 'Check Again'\n\n"
+            f"💡 *Still not working?* Contact support",
             parse_mode="Markdown"
         )
 
@@ -536,8 +572,11 @@ async def how_to_use(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
+    
     if data == "check_join":
         await check_join_callback(update, context)
+    elif data == "force_refresh":
+        await force_refresh(update, context)
     elif data == "back_to_menu":
         await show_main_menu(update, context)
     elif data.startswith("remove_acc_"):
