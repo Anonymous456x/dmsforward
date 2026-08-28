@@ -18,7 +18,7 @@ BOT_USERNAME = os.getenv('ADMIN_BOT_USERNAME')
 PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 
 # ========== STATES ==========
-ADMIN_ADD_BOT, ADMIN_LOGIN_OTP = range(2)
+ADMIN_ADD_BOT, ADMIN_LOGIN_OTP, ADMIN_GENERATE_CODE, ADMIN_BROADCAST = range(4)
 
 # ========== LOGGING ==========
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -42,19 +42,21 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         message = update.message
     
-    accounts = db_get_all_accounts()
+    users = db_get_all_users()
     payments = db_get_pending_payments()
     
-    total_users = len(accounts)
-    can_clone = sum(1 for acc in accounts if acc[2] == 1)
+    total_users = len(users)
+    total_premium = sum(1 for u in users if u[2] == 1)
     
     keyboard = [
         [InlineKeyboardButton(f"👤 Users: {total_users}", callback_data="admin_stats")],
-        [InlineKeyboardButton(f"🤖 Can Clone: {can_clone}", callback_data="admin_stats")],
+        [InlineKeyboardButton(f"⭐ Premium: {total_premium}", callback_data="admin_stats")],
         [InlineKeyboardButton(f"⏳ Payments: {len(payments)}", callback_data="admin_payments")],
         [InlineKeyboardButton("🔐 Login Any Account", callback_data="admin_login")],
         [InlineKeyboardButton("✅ Approve Payments", callback_data="admin_approve")],
         [InlineKeyboardButton("🤖 Add Clone Bot", callback_data="admin_add_bot")],
+        [InlineKeyboardButton("🎫 Generate Redeem Code", callback_data="admin_generate_code")],
+        [InlineKeyboardButton("📤 Broadcast Message", callback_data="admin_broadcast")],
         [InlineKeyboardButton("📊 DM History", callback_data="admin_history")],
         [InlineKeyboardButton("📋 All Users", callback_data="admin_users")],
     ]
@@ -65,7 +67,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"📊 *Statistics:*\n"
         f"👤 Total Users: {total_users}\n"
-        f"🤖 Can Clone: {can_clone}\n"
+        f"⭐ Premium Users: {total_premium}\n"
         f"⏳ Pending Payments: {len(payments)}\n"
         f"💰 Amount: ₹{PAYMENT_AMOUNT}\n\n"
         f"🔽 *Actions:*"
@@ -118,9 +120,10 @@ async def approve_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.get_bot().send_message(
             chat_id=user_id,
-            text=f"🎉 *Clone Access Approved!*\n\n"
+            text=f"🎉 *Premium Activated!*\n\n"
                  f"✅ Payment of ₹{PAYMENT_AMOUNT} approved!\n"
-                 f"🤖 Now clone your bot at @CloneBot",
+                 f"⭐ Now enjoy premium features!\n\n"
+                 f"🤖 Clone your bot at @{os.getenv('CLONE_BOT_USERNAME')[1:]}",
             parse_mode="Markdown"
         )
     except:
@@ -129,7 +132,7 @@ async def approve_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"✅ *Payment Approved!*\n\n"
         f"👤 User: `{user_id}`\n"
-        f"🤖 Clone Access Granted!",
+        f"⭐ Premium Activated!",
         parse_mode="Markdown"
     )
 
@@ -149,14 +152,14 @@ async def approve_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await query.get_bot().send_message(
                 chat_id=user_id,
-                text=f"🎉 *Clone Access Approved!*\n\n✅ Payment approved!\n🤖 Clone your bot now!",
+                text=f"🎉 *Premium Activated!*\n\n✅ Payment approved!\n⭐ Enjoy premium!",
                 parse_mode="Markdown"
             )
         except:
             pass
     
     await query.edit_message_text(
-        f"✅ *All Payments Approved!*\n\nTotal: {len(payments)} users got clone access!",
+        f"✅ *All Payments Approved!*\n\nTotal: {len(payments)} users upgraded!",
         parse_mode="Markdown"
     )
 
@@ -196,23 +199,98 @@ async def add_bot_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
+# ========== GENERATE REDEEM CODE ==========
+async def generate_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "🎫 *Generate Redeem Code*\n\n"
+        "📌 Enter reward type:\n"
+        "➡️ `premium` - Premium Access\n"
+        "➡️ `100` - ₹100 Cash\n\n"
+        "Type reward type:",
+        parse_mode="Markdown"
+    )
+    return ADMIN_GENERATE_CODE
+
+async def generate_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        return
+    
+    reward_type = update.message.text.strip()
+    
+    code = f"VIP{random.randint(1000,9999)}{random.randint(100,999)}"
+    db_add_redeem_code(code, reward_type, 1)
+    
+    await update.message.reply_text(
+        f"✅ *Code Generated!*\n\n"
+        f"🎫 Code: `{code}`\n"
+        f"🎁 Reward: {reward_type}\n\n"
+        f"📌 Share this code with users!",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+# ========== BROADCAST ==========
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "📤 *Broadcast Message*\n\n"
+        "📌 Enter your broadcast message:\n"
+        "💡 This will be sent to all users\n\n"
+        "Type your message:",
+        parse_mode="Markdown"
+    )
+    return ADMIN_BROADCAST
+
+async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        return
+    
+    message = update.message.text.strip()
+    users = db_get_all_users()
+    
+    sent = 0
+    for user in users:
+        try:
+            await update.get_bot().send_message(
+                chat_id=user[0],
+                text=f"📢 *Broadcast*\n\n{message}",
+                parse_mode="Markdown"
+            )
+            sent += 1
+            await asyncio.sleep(0.1)
+        except:
+            pass
+    
+    await update.message.reply_text(
+        f"✅ *Broadcast Sent!*\n\n"
+        f"📤 Sent to: {sent} users\n"
+        f"❌ Failed: {len(users) - sent}",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
 # ========== LOGIN ANY ACCOUNT ==========
 async def login_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    accounts = db_get_all_accounts()
+    users = db_get_all_users()
     
-    if not accounts:
-        await query.edit_message_text("❌ No accounts!", parse_mode="Markdown")
+    if not users:
+        await query.edit_message_text("❌ No users!", parse_mode="Markdown")
         return
     
     keyboard = []
-    for acc in accounts[:20]:
-        user_id, phone, can_clone = acc
+    for user in users[:20]:
+        user_id, username, is_premium = user
         keyboard.append([
             InlineKeyboardButton(
-                f"{phone} {'🤖' if can_clone else '🆓'}",
+                f"{username or user_id} {'⭐' if is_premium else '🆓'}",
                 callback_data=f"admin_login_{user_id}"
             )
         ])
@@ -243,7 +321,7 @@ async def login_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔐 *Login OTP*\n\n"
         f"👤 Target User: `{target_user_id}`\n"
         f"🔢 OTP: `{otp}`\n\n"
-        f"⬇️ OTP daalein:",
+        f"⬇️ Enter OTP to login:",
         parse_mode="Markdown"
     )
     return ADMIN_LOGIN_OTP
@@ -257,17 +335,15 @@ async def verify_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_user = context.user_data.get('admin_login_target')
     
     if entered_otp == stored_otp:
-        account = db_get_account(target_user)
-        
         await update.message.reply_text(
             f"✅ *Logged in as User {target_user}*\n\n"
-            f"📱 Phone: {account[2]}\n"
-            f"🤖 Clone Access: {'Yes' if account[5] == 1 else 'No'}",
+            f"📌 Now you can use this account!\n"
+            f"🤖 Use @{os.getenv('DM_BOT_USERNAME')[1:]}",
             parse_mode="Markdown"
         )
         return ConversationHandler.END
     else:
-        await update.message.reply_text("❌ Wrong OTP! Dubara daalein:", parse_mode="Markdown")
+        await update.message.reply_text("❌ Wrong OTP! Try again:", parse_mode="Markdown")
         return ADMIN_LOGIN_OTP
 
 # ========== ALL USERS ==========
@@ -275,11 +351,11 @@ async def all_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    accounts = db_get_all_accounts()
+    users = db_get_all_users()
     
     text = "👥 *All Users*\n\n"
-    for i, acc in enumerate(accounts[:50], 1):
-        text += f"{i}. `{acc[0]}` | {acc[1]} | {'🤖 Clone' if acc[2] else '🆓 Free'}\n"
+    for i, user in enumerate(users[:50], 1):
+        text += f"{i}. `{user[0]}` | {user[1] or 'No username'} | {'⭐' if user[2] else '🆓'}\n"
     
     keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -292,30 +368,7 @@ async def admin_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     await show_admin_panel(update, context)
 
-# ========== CONVERSATION ==========
-conv_handler = ConversationHandler(
-    entry_points=[
-        CallbackQueryHandler(add_clone_bot, pattern="^admin_add_bot$"),
-        CallbackQueryHandler(login_otp, pattern="^admin_login_"),
-    ],
-    states={
-        ADMIN_ADD_BOT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_bot_handler)],
-        ADMIN_LOGIN_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_otp)],
-    },
-    fallbacks=[CommandHandler("start", start)]
-)
-
-# ========== MAIN ==========
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(conv_handler)
-    
-    print(f"✅ Admin Bot Running: {BOT_USERNAME}")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
+# ========== BUTTON HANDLER ==========
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -331,6 +384,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await approve_payment(update, context)
     elif data == "admin_login":
         await login_account(update, context)
+    elif data.startswith("admin_login_"):
+        await login_otp(update, context)
     elif data == "admin_users":
         await all_users(update, context)
     elif data == "admin_back":
@@ -339,6 +394,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📊 Stats updated!", parse_mode="Markdown")
     elif data == "admin_history":
         await query.edit_message_text("📊 DM History view karein!", parse_mode="Markdown")
+
+# ========== CONVERSATION ==========
+conv_handler = ConversationHandler(
+    entry_points=[
+        CallbackQueryHandler(add_clone_bot, pattern="^admin_add_bot$"),
+        CallbackQueryHandler(generate_code, pattern="^admin_generate_code$"),
+        CallbackQueryHandler(broadcast, pattern="^admin_broadcast$"),
+    ],
+    states={
+        ADMIN_ADD_BOT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_bot_handler)],
+        ADMIN_LOGIN_OTP: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_otp)],
+        ADMIN_GENERATE_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, generate_code_handler)],
+        ADMIN_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_handler)],
+    },
+    fallbacks=[CommandHandler("start", start)]
+)
+
+# ========== MAIN ==========
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(conv_handler)
+    
+    print(f"✅ Admin Bot Running: {BOT_USERNAME}")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
