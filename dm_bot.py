@@ -23,42 +23,79 @@ PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ========== CHANNEL JOIN CHECK - FIXED ==========
 async def check_channel_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    channel_username = os.getenv('CHANNEL_USERNAME', '@free_promote')
+    if channel_username.startswith('@'):
+        channel_username = channel_username[1:]
+    
     try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        member = await context.bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
         if member.status in ['member', 'administrator', 'creator']:
             return True
-    except:
-        pass
-    return False
+        else:
+            return False
+    except Exception as e:
+        return False
 
+# ========== START - WITH JOIN CHECK ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    if not await check_channel_join(update, context):
-        keyboard = [[InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)], [InlineKeyboardButton("✅ Check Again", callback_data="check_join")]]
+    # Check if user joined channel
+    is_member = await check_channel_join(update, context)
+    
+    if not is_member:
+        keyboard = [
+            [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)],
+            [InlineKeyboardButton("✅ Check Again", callback_data="check_join")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
-            "⚠️ *Please Join Our Channel First!*\n\n🔹 Click below to join:\n" + CHANNEL_LINK + "\n\n✅ After joining, click 'Check Again'",
-            reply_markup=reply_markup, parse_mode="Markdown"
+            f"⚠️ *Please Join Our Channel First!*\n\n"
+            f"🔹 Channel: {CHANNEL_USERNAME}\n"
+            f"🔗 Link: {CHANNEL_LINK}\n\n"
+            f"📌 *Steps:*\n"
+            f"1️⃣ Click 'Join Channel'\n"
+            f"2️⃣ Click 'Join' in Telegram\n"
+            f"3️⃣ Click 'Check Again'\n\n"
+            f"✅ *Already joined?* Click 'Check Again'",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
         )
         return
     
+    # User joined, show main menu
     db_add_user(user_id, user.username or "Unknown", user.first_name or "User")
     await show_main_menu(update, context)
 
+# ========== CHECK JOIN CALLBACK ==========
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    if await check_channel_join(update, context):
+    
+    is_member = await check_channel_join(update, context)
+    
+    if is_member:
         db_add_user(user_id, query.from_user.username or "Unknown", query.from_user.first_name or "User")
         await show_main_menu(update, context)
     else:
-        await query.edit_message_text("❌ *You haven't joined the channel yet!*\n\n🔹 Join: " + CHANNEL_LINK + "\n\n✅ After joining, click 'Check Again'", parse_mode="Markdown")
+        await query.edit_message_text(
+            f"❌ *You haven't joined the channel yet!*\n\n"
+            f"🔹 Join: {CHANNEL_LINK}\n\n"
+            f"📌 *After joining:*\n"
+            f"1️⃣ Wait 5 seconds\n"
+            f"2️⃣ Click 'Check Again'\n\n"
+            f"💡 *Already joined?* Try /start again",
+            parse_mode="Markdown"
+        )
 
+# ========== MAIN MENU ==========
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if hasattr(update, 'effective_user') else update.callback_query.from_user.id
     user = db_get_user(user_id)
@@ -105,6 +142,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
+# ========== ADD ACCOUNT ==========
 async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -136,6 +174,7 @@ async def otp_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Wrong OTP! Try again:", parse_mode="Markdown")
         return OTP_VERIFY
 
+# ========== REMOVE ACCOUNT ==========
 async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -146,8 +185,7 @@ async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     keyboard = []
     for acc in accounts:
-        keyboard.append([InlineKeyboardButton(f"📱 {acc[2]}", callback_data=f"remove_acc_{acc[0]}")
-])
+        keyboard.append([InlineKeyboardButton(f"📱 {acc[2]}", callback_data=f"remove_acc_{acc[0]}")])
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text("📱 *Select Account to Remove:*", reply_markup=reply_markup, parse_mode="Markdown")
@@ -160,6 +198,7 @@ async def remove_account_callback(update: Update, context: ContextTypes.DEFAULT_
     db_remove_account(user_id, account_id)
     await query.edit_message_text("✅ *Account Removed Successfully!*", parse_mode="Markdown")
 
+# ========== MASS DM ==========
 async def mass_dm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -207,6 +246,7 @@ async def dm_send_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ *DM Campaign Complete!*\n\n📤 Sent: {sent} DMs\n🎯 Target: {target}\n⏰ Time: {datetime.now().strftime('%H:%M')}", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ========== SET MESSAGE ==========
 async def set_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -218,6 +258,7 @@ async def set_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(f"✅ *Message Saved!*\n\n📝 {message[:100]}...", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ========== SET AUTO REPLY ==========
 async def set_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -229,6 +270,7 @@ async def set_auto_reply_handler(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(f"✅ *Auto Reply Saved!*\n\n🤖 {message[:100]}...", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ========== SET ADS ==========
 async def set_ads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -260,6 +302,7 @@ async def join_request_dm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     await query.edit_message_text("📩 *Join Request DM*\n\n📌 Send join requests to users!", parse_mode="Markdown")
 
+# ========== MY STATS ==========
 async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -281,6 +324,7 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(stats_text, reply_markup=reply_markup, parse_mode="Markdown")
 
+# ========== MY ACCOUNT ==========
 async def my_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -308,6 +352,7 @@ async def my_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(account_text, reply_markup=reply_markup, parse_mode="Markdown")
 
+# ========== GO VIP PREMIUM ==========
 async def go_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -327,6 +372,7 @@ async def go_vip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup, parse_mode="Markdown"
     )
 
+# ========== QR CODE PAYMENT ==========
 async def pay_qr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -361,6 +407,7 @@ async def pay_qr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await query.edit_message_text(f"❌ *Error generating QR Code!*\n\n📌 Please use UPI ID directly:\n`{os.getenv('UPI_ID')}`\n\n💳 Pay ₹{PAYMENT_AMOUNT} and submit UTR", parse_mode="Markdown")
 
+# ========== SUBMIT UTR ==========
 async def submit_utr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -388,6 +435,7 @@ async def utr_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ *UTR Submitted Successfully!*\n\n📤 UTR: `{utr}`\n💰 Amount: ₹{PAYMENT_AMOUNT}\n⏳ Status: *Pending Approval*\n\n📌 Admin will verify and approve within 24 hours.", reply_markup=reply_markup, parse_mode="Markdown")
     return ConversationHandler.END
 
+# ========== CHECK PAYMENT STATUS ==========
 async def check_payment_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -406,6 +454,7 @@ async def check_payment_status(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await query.edit_message_text(f"❌ *No Payment Found*\n\n💰 Pay ₹{PAYMENT_AMOUNT} to get premium!", parse_mode="Markdown")
 
+# ========== REDEEM CODE ==========
 async def redeem_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -426,6 +475,7 @@ async def redeem_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ *Invalid or Used Code!*\n\n📌 Please check and try again.", parse_mode="Markdown")
     return ConversationHandler.END
 
+# ========== ACCEPT PENDING ==========
 async def accept_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -436,8 +486,7 @@ async def accept_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     keyboard = []
     for req in requests:
-        keyboard.append([InlineKeyboardButton(f"📩 Accept from {req[1]}", callback_data=f"accept_req_{req[0]}")
-])
+        keyboard.append([InlineKeyboardButton(f"📩 Accept from {req[1]}", callback_data=f"accept_req_{req[0]}")])
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(f"📥 *Pending Requests ({len(requests)})*\n\nSelect to accept:", reply_markup=reply_markup, parse_mode="Markdown")
@@ -449,6 +498,7 @@ async def accept_request_callback(update: Update, context: ContextTypes.DEFAULT_
     db_accept_request(request_id)
     await query.edit_message_text("✅ *Request Accepted!*", parse_mode="Markdown")
 
+# ========== REFER & EARN ==========
 async def refer_earn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -463,11 +513,13 @@ async def refer_earn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# ========== SUPPORT ==========
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("💬 *Support*\n━━━━━━━━━━━━━━━━━━\n\n📌 *Contact Us:*\n👤 Admin: @admin_username\n📧 Email: support@example.com\n\n⏰ *Response Time:*\n24-48 hours\n\n🤖 *Bot Issues:*\nReport with /feedback", parse_mode="Markdown")
 
+# ========== HOW TO USE ==========
 async def how_to_use(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -480,6 +532,7 @@ async def how_to_use(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# ========== BUTTON HANDLER ==========
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -534,6 +587,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "support":
         await support(update, context)
 
+# ========== CONVERSATION HANDLER ==========
 conv_handler = ConversationHandler(
     entry_points=[
         CallbackQueryHandler(add_account, pattern="^add_account$"),
@@ -559,6 +613,7 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("start", start)]
 )
 
+# ========== MAIN ==========
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
