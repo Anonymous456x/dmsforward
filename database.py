@@ -9,23 +9,32 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Users accounts
+    # Users table
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        joined_date TEXT,
+        is_premium INTEGER DEFAULT 0,
+        is_banned INTEGER DEFAULT 0,
+        refer_count INTEGER DEFAULT 0
+    )''')
+    
+    # Accounts table (user added accounts)
     c.execute('''CREATE TABLE IF NOT EXISTS user_accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         phone TEXT,
         session_string TEXT,
         added_date TEXT,
-        can_clone INTEGER DEFAULT 0,
-        UNIQUE(user_id, phone)
+        status TEXT DEFAULT 'active'
     )''')
     
-    # DM history
+    # DM History
     c.execute('''CREATE TABLE IF NOT EXISTS dm_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        target_type TEXT,
-        target_id TEXT,
+        target TEXT,
         message TEXT,
         count INTEGER,
         sent INTEGER,
@@ -61,35 +70,118 @@ def init_db():
         status TEXT DEFAULT 'available'
     )''')
     
+    # Ads
+    c.execute('''CREATE TABLE IF NOT EXISTS ads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ad_text TEXT,
+        media_type TEXT,
+        media_id TEXT,
+        created_date TEXT,
+        status TEXT DEFAULT 'active'
+    )''')
+    
+    # Auto Reply
+    c.execute('''CREATE TABLE IF NOT EXISTS auto_reply (
+        user_id INTEGER PRIMARY KEY,
+        reply_text TEXT,
+        is_active INTEGER DEFAULT 0
+    )''')
+    
+    # Pending Requests
+    c.execute('''CREATE TABLE IF NOT EXISTS pending_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        target_user_id INTEGER,
+        request_date TEXT,
+        status TEXT DEFAULT 'pending'
+    )''')
+    
+    # Redeem Codes
+    c.execute('''CREATE TABLE IF NOT EXISTS redeem_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE,
+        reward_type TEXT,
+        reward_value INTEGER,
+        created_date TEXT,
+        used_by INTEGER DEFAULT NULL,
+        is_used INTEGER DEFAULT 0
+    )''')
+    
     conn.commit()
     conn.close()
 
+# ========== USERS ==========
+def db_add_user(user_id, username, first_name):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR IGNORE INTO users (user_id, username, first_name, joined_date) VALUES (?, ?, ?, ?)",
+        (user_id, username, first_name, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+def db_get_user(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+    user = c.fetchone()
+    conn.close()
+    return user
+
+def db_get_all_users():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id, username, is_premium FROM users")
+    users = c.fetchall()
+    conn.close()
+    return users
+
+def db_update_premium(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+# ========== ACCOUNTS ==========
 def db_add_account(user_id, phone, session):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO user_accounts (user_id, phone, session_string, added_date) VALUES (?, ?, ?, ?)",
+        "INSERT INTO user_accounts (user_id, phone, session_string, added_date) VALUES (?, ?, ?, ?)",
         (user_id, phone, session, datetime.now().isoformat())
     )
     conn.commit()
     conn.close()
 
-def db_get_account(user_id):
+def db_get_accounts(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT * FROM user_accounts WHERE user_id = ?", (user_id,))
-    account = c.fetchone()
-    conn.close()
-    return account
-
-def db_get_all_accounts():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT user_id, phone, can_clone FROM user_accounts")
+    c.execute("SELECT * FROM user_accounts WHERE user_id = ? AND status = 'active'", (user_id,))
     accounts = c.fetchall()
     conn.close()
     return accounts
 
+def db_remove_account(user_id, account_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE user_accounts SET status = 'removed' WHERE id = ? AND user_id = ?", (account_id, user_id))
+    conn.commit()
+    conn.close()
+
+# ========== DM HISTORY ==========
+def db_add_dm_history(user_id, target, message, count, sent):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO dm_history (user_id, target, message, count, sent, date) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, target, message, count, sent, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+# ========== PAYMENTS ==========
 def db_add_clone_payment(user_id, amount, utr):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -114,11 +206,12 @@ def db_approve_payment(payment_id):
     c.execute("UPDATE clone_payments SET status = 'approved' WHERE id = ?", (payment_id,))
     c.execute("SELECT user_id FROM clone_payments WHERE id = ?", (payment_id,))
     user_id = c.fetchone()[0]
-    c.execute("UPDATE user_accounts SET can_clone = 1 WHERE user_id = ?", (user_id,))
+    c.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
     return user_id
 
+# ========== CLONE BOTS ==========
 def db_add_clone(user_id, bot_token, bot_username):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -207,16 +300,55 @@ def db_get_clone_env(user_id, bot_token):
         return json.loads(result[0])
     return None
 
-def db_add_dm_history(user_id, target_type, target_id, message, count, sent):
+# ========== PENDING REQUESTS ==========
+def db_add_pending_request(user_id, target_user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO dm_history (user_id, target_type, target_id, message, count, sent, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (user_id, target_type, target_id, message, count, sent, datetime.now().isoformat())
+        "INSERT INTO pending_requests (user_id, target_user_id, request_date) VALUES (?, ?, ?)",
+        (user_id, target_user_id, datetime.now().isoformat())
     )
     conn.commit()
     conn.close()
 
-# Initialize database
+def db_get_pending_requests(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM pending_requests WHERE target_user_id = ? AND status = 'pending'", (user_id,))
+    requests = c.fetchall()
+    conn.close()
+    return requests
+
+def db_accept_request(request_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE pending_requests SET status = 'accepted' WHERE id = ?", (request_id,))
+    conn.commit()
+    conn.close()
+
+# ========== REDEEM CODES ==========
+def db_add_redeem_code(code, reward_type, reward_value):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO redeem_codes (code, reward_type, reward_value, created_date) VALUES (?, ?, ?, ?)",
+        (code, reward_type, reward_value, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+def db_use_redeem_code(code, user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM redeem_codes WHERE code = ? AND is_used = 0", (code,))
+    code_data = c.fetchone()
+    if code_data:
+        c.execute("UPDATE redeem_codes SET is_used = 1, used_by = ? WHERE code = ?", (user_id, code))
+        conn.commit()
+        conn.close()
+        return code_data
+    conn.close()
+    return None
+
 init_db()
 print("✅ Database initialized!")
