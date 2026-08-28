@@ -1,9 +1,6 @@
 import os
 import logging
 import json
-import subprocess
-import sys
-import signal
 import re
 from datetime import datetime
 from dotenv import load_dotenv
@@ -32,11 +29,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    account = db_get_account(user_id)
+    user_data = db_get_user(user_id)
     
     keyboard = []
     
-    if account and account[5] == 1:
+    if user_data and user_data[4] == 1:
         keyboard.append([InlineKeyboardButton("🤖 Clone My Bot", callback_data="clone_now")])
         keyboard.append([InlineKeyboardButton("📦 My Clones", callback_data="my_clones")])
         keyboard.append([InlineKeyboardButton("📊 Check Status", callback_data="check_status")])
@@ -51,7 +48,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("❓ Help", callback_data="help")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    if account and account[5] == 1:
+    if user_data and user_data[4] == 1:
         await update.message.reply_text(
             f"🤖 *Bot Cloning*\n"
             f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -91,8 +88,8 @@ async def clone_now(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     
-    account = db_get_account(user_id)
-    if not account or account[5] != 1:
+    user = db_get_user(user_id)
+    if not user or user[4] != 1:
         await query.edit_message_text(
             f"❌ *Access Denied!*\n\n💰 Pay ₹{PAYMENT_AMOUNT} first",
             parse_mode="Markdown"
@@ -154,24 +151,6 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not clone:
         await query.edit_message_text("❌ You don't own this bot!", parse_mode="Markdown")
         return
-    
-    env_data = db_get_clone_env(user_id, bot_token)
-    
-    # Create bot directory
-    bot_dir = f"bots/{user_id}_{bot_token[:10]}"
-    os.makedirs(bot_dir, exist_ok=True)
-    
-    # Create .env
-    env_content = ""
-    for key, value in env_data.items():
-        env_content += f"{key}={value}\n"
-    
-    with open(f"{bot_dir}/.env", "w") as f:
-        f.write(env_content)
-    
-    # Create bot.py
-    with open(f"{bot_dir}/bot.py", "w") as f:
-        f.write(get_bot_template())
     
     db_update_clone_status(user_id, bot_token, "running")
     
@@ -426,9 +405,9 @@ async def check_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     
-    account = db_get_account(user_id)
+    user = db_get_user(user_id)
     
-    if account and account[5] == 1:
+    if user and user[4] == 1:
         await query.edit_message_text(
             f"✅ *Payment Status: Approved!*\n\n"
             f"💰 Amount: ₹{PAYMENT_AMOUNT}\n"
@@ -478,36 +457,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Payment Amount",
         parse_mode="Markdown"
     )
-
-# ========== BOT TEMPLATE ==========
-def get_bot_template():
-    return '''import os
-import logging
-from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Hello! I'm your DM Bot!\\n\\n📌 Features:\\n✅ DM Forward\\n✅ Account Add\\n✅ Target Selection")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❓ Help\\n\\nSend me any message!")
-
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    print("✅ Bot Running...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == "__main__":
-    main()
-'''
 
 # ========== BUTTON HANDLER ==========
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -563,8 +512,14 @@ conv_handler = ConversationHandler(
 
 # ========== MAIN ==========
 def main():
-    os.makedirs("bots", exist_ok=True)
-    
     app = Application.builder().token(BOT_TOKEN).build()
     
-    app.add_
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(conv_handler)
+    
+    print(f"✅ Clone Bot Running: {BOT_USERNAME}")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
