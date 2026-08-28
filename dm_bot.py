@@ -15,8 +15,6 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv('DM_BOT_TOKEN')
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
-CHANNEL_LINK = os.getenv('CHANNEL_LINK', 'https://t.me/+vKFF6nhXTzwxNDdl')
-CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME', '@free_promote')
 PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 
 (ADD_ACCOUNT, PHONE_INPUT, OTP_VERIFY, SET_MESSAGE, SET_AUTO_REPLY, SET_ADS, DM_COUNT, REDEEM_CODE, DM_MESSAGE, DM_SEND, PAYMENT_UTR) = range(11)
@@ -24,113 +22,13 @@ PAYMENT_AMOUNT = int(os.getenv('PAYMENT_AMOUNT', 100))
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========== CHANNEL JOIN CHECK ==========
-async def check_channel_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    channel_username = os.getenv('CHANNEL_USERNAME', '@free_promote')
-    
-    if channel_username.startswith('@'):
-        channel_username = channel_username[1:]
-    
-    try:
-        member = await context.bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            return True
-        else:
-            return False
-    except Exception as e:
-        logger.error(f"Channel check error: {e}")
-        return False
-
-# ========== START ==========
+# ========== START - NO CHANNEL CHECK ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    is_member = await check_channel_join(update, context)
-    
-    if not is_member:
-        keyboard = [
-            [InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)],
-            [InlineKeyboardButton("✅ Check Again", callback_data="check_join")],
-            [InlineKeyboardButton("🔄 Force Refresh", callback_data="force_refresh")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"⚠️ *Please Join Our Channel First!*\n\n"
-            f"🔹 Channel: {CHANNEL_USERNAME}\n"
-            f"🔗 Link: {CHANNEL_LINK}\n\n"
-            f"📌 *Steps:*\n"
-            f"1️⃣ Click 'Join Channel'\n"
-            f"2️⃣ Click 'Join' in Telegram\n"
-            f"3️⃣ Click 'Check Again'\n\n"
-            f"💡 *Already joined?* Click 'Force Refresh'",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        return
-    
     db_add_user(user_id, user.username or "Unknown", user.first_name or "User")
     await show_main_menu(update, context)
-
-# ========== CHECK JOIN CALLBACK ==========
-async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    
-    is_member = await check_channel_join(update, context)
-    
-    if is_member:
-        db_add_user(user_id, query.from_user.username or "Unknown", query.from_user.first_name or "User")
-        await show_main_menu(update, context)
-    else:
-        await query.edit_message_text(
-            f"❌ *You haven't joined the channel yet!*\n\n"
-            f"🔹 Join: {CHANNEL_LINK}\n\n"
-            f"📌 *After joining:*\n"
-            f"1️⃣ Wait 5 seconds\n"
-            f"2️⃣ Click 'Check Again'\n\n"
-            f"💡 *Already joined?* Click 'Force Refresh'",
-            parse_mode="Markdown"
-        )
-
-# ========== FORCE REFRESH ==========
-async def force_refresh(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    
-    try:
-        channel_username = os.getenv('CHANNEL_USERNAME', '@free_promote')
-        if channel_username.startswith('@'):
-            channel_username = channel_username[1:]
-        
-        member = await context.bot.get_chat_member(chat_id=f"@{channel_username}", user_id=user_id)
-        
-        if member.status in ['member', 'administrator', 'creator']:
-            db_add_user(user_id, query.from_user.username or "Unknown", query.from_user.first_name or "User")
-            await show_main_menu(update, context)
-            return
-        else:
-            await query.edit_message_text(
-                f"❌ *Not a member yet!*\n\n"
-                f"📌 Please join first:\n{CHANNEL_LINK}\n\n"
-                f"Then click 'Check Again'",
-                parse_mode="Markdown"
-            )
-            return
-    except Exception as e:
-        await query.edit_message_text(
-            f"❌ *Error checking membership!*\n\n"
-            f"📌 Please try:\n"
-            f"1️⃣ Join: {CHANNEL_LINK}\n"
-            f"2️⃣ Wait 10 seconds\n"
-            f"3️⃣ Click 'Check Again'\n\n"
-            f"💡 *Still not working?* Contact support",
-            parse_mode="Markdown"
-        )
 
 # ========== MAIN MENU ==========
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,11 +59,15 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💬 Support", callback_data="support")]
     ]
     
+    # Admin button if user is admin
+    if user_id == ADMIN_USER_ID:
+        keyboard.append([InlineKeyboardButton("🔐 Admin Panel", callback_data="admin_panel")])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     accounts = db_get_accounts(user_id)
     
     welcome_text = (
-        f"✅ *All channels joined! Welcome, {first_name} 😊!*\n\n"
+        f"✅ *Welcome, {first_name} 😊!*\n\n"
         f"🆔 *Your ID:* `{user_id}`\n"
         f"👤 *Username:* @{username}\n\n"
         f"🔔 *Tap Add Account to get started!*\n"
@@ -569,16 +471,118 @@ async def how_to_use(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# ========== ADMIN PANEL ==========
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    if user_id != ADMIN_USER_ID:
+        await query.edit_message_text("❌ Unauthorized!", parse_mode="Markdown")
+        return
+    
+    users = db_get_all_users()
+    
+    if not users:
+        await query.edit_message_text("❌ No users found!", parse_mode="Markdown")
+        return
+    
+    keyboard = []
+    for user in users:
+        user_id_db, username, is_premium = user
+        keyboard.append([
+            InlineKeyboardButton(
+                f"👤 {username or user_id_db} {'⭐' if is_premium else '🆓'}",
+                callback_data=f"admin_login_{user_id_db}"
+            )
+        ])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    total_users = len(users)
+    total_premium = sum(1 for u in users if u[2] == 1)
+    
+    await query.edit_message_text(
+        f"🔐 *Admin Panel*\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📊 *Statistics:*\n"
+        f"👤 Total Users: {total_users}\n"
+        f"⭐ Premium: {total_premium}\n"
+        f"🆓 Free: {total_users - total_premium}\n\n"
+        f"📌 *Select account to login:*",
+        reply_markup=reply_markup,
+        parse_mode="Markdown"
+    )
+
+async def admin_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    if user_id != ADMIN_USER_ID:
+        await query.edit_message_text("❌ Unauthorized!", parse_mode="Markdown")
+        return
+    
+    target_user_id = int(query.data.split("_")[2])
+    user_data = db_get_user(target_user_id)
+    
+    if not user_data:
+        await query.edit_message_text("❌ User not found!", parse_mode="Markdown")
+        return
+    
+    # Generate OTP for admin login
+    otp = str(random.randint(100000, 999999))
+    context.user_data['admin_login_otp'] = otp
+    context.user_data['admin_login_target'] = target_user_id
+    
+    await query.edit_message_text(
+        f"🔐 *Login OTP Generated*\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 Target User: `{target_user_id}`\n"
+        f"📱 Phone: {user_data[1]}\n"
+        f"🔢 OTP: `{otp}`\n\n"
+        f"⬇️ Enter OTP to login:",
+        parse_mode="Markdown"
+    )
+    return OTP_VERIFY
+
+async def admin_verify_otp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if user_id != ADMIN_USER_ID:
+        await update.message.reply_text("❌ Unauthorized!", parse_mode="Markdown")
+        return
+    
+    entered_otp = update.message.text.strip()
+    stored_otp = context.user_data.get('admin_login_otp')
+    target_user = context.user_data.get('admin_login_target')
+    
+    if entered_otp == stored_otp:
+        await update.message.reply_text(
+            f"✅ *Logged in as User {target_user}*\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📌 Now you can use this account!\n"
+            f"🤖 Send messages as this user\n\n"
+            f"📱 *User Details:*\n"
+            f"🆔 ID: `{target_user}`\n\n"
+            f"💡 Use /start to continue",
+            parse_mode="Markdown"
+        )
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text(
+            "❌ *Wrong OTP!*\n\n"
+            "Try again:",
+            parse_mode="Markdown"
+        )
+        return OTP_VERIFY
+
 # ========== BUTTON HANDLER ==========
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
     
-    if data == "check_join":
-        await check_join_callback(update, context)
-    elif data == "force_refresh":
-        await force_refresh(update, context)
-    elif data == "back_to_menu":
+    if data == "back_to_menu":
         await show_main_menu(update, context)
     elif data.startswith("remove_acc_"):
         await remove_account_callback(update, context)
@@ -626,6 +630,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await how_to_use(update, context)
     elif data == "support":
         await support(update, context)
+    elif data == "admin_panel":
+        await admin_panel(update, context)
+    elif data.startswith("admin_login_"):
+        await admin_login(update, context)
 
 # ========== CONVERSATION HANDLER ==========
 conv_handler = ConversationHandler(
